@@ -40,12 +40,17 @@ fun CreateTaskScreen(
     onTaskCreated: () -> Unit
 ) {
     val employees by taskViewModel.employees.collectAsStateWithLifecycle()
+    val categories by taskViewModel.allAvailableCategories.collectAsStateWithLifecycle()
     val createTaskState by taskViewModel.createTaskState.collectAsStateWithLifecycle()
 
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf("") }
+    var categorySearchQuery by remember { mutableStateOf("") }
     var categoryDropdownExpanded by remember { mutableStateOf(false) }
+
+    val filteredCategories = categories.filter { 
+        it.contains(categorySearchQuery, ignoreCase = true) 
+    }
 
     var selectedEmployees by remember { mutableStateOf(emptyList<User>()) }
     var employeeDropdownExpanded by remember { mutableStateOf(false) }
@@ -57,8 +62,6 @@ fun CreateTaskScreen(
 
     val context = LocalContext.current
     val dateFormatter = remember { SimpleDateFormat("MM/dd/yyyy", Locale.getDefault()) }
-
-    val categories = listOf("Engineering", "Sales", "Inventory", "Marketing", "Support", "Operations")
 
     val datePickerDialog = remember {
         DatePickerDialog(
@@ -77,6 +80,7 @@ fun CreateTaskScreen(
 
     LaunchedEffect(createTaskState) {
         if (createTaskState is ActionState.Success) {
+            android.widget.Toast.makeText(context, "Task assigned successfully!", android.widget.Toast.LENGTH_SHORT).show()
             taskViewModel.resetCreateTaskState()
             onTaskCreated()
         }
@@ -116,11 +120,11 @@ fun CreateTaskScreen(
                                         assignedTo = selectedEmployees.map { it.uid },
                                         deadlineDateMillis = selectedDateMillis,
                                         priority = selectedPriority,
-                                        category = selectedCategory
+                                        category = categorySearchQuery.ifBlank { null }
                                     )
                                 }
                             },
-                            enabled = selectedEmployees.isNotEmpty() && title.isNotBlank() && description.isNotBlank() && createTaskState !is ActionState.Loading,
+                            enabled = selectedEmployees.isNotEmpty() && title.isNotBlank() && description.isNotBlank() && categorySearchQuery.isNotBlank() && createTaskState !is ActionState.Loading,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -389,9 +393,12 @@ fun CreateTaskScreen(
                             onExpandedChange = { categoryDropdownExpanded = !categoryDropdownExpanded }
                         ) {
                             OutlinedTextField(
-                                value = selectedCategory.ifBlank { "Select category" },
-                                onValueChange = {},
-                                readOnly = true,
+                                value = categorySearchQuery,
+                                onValueChange = { 
+                                    categorySearchQuery = it
+                                    categoryDropdownExpanded = true 
+                                },
+                                placeholder = { Text("Search or type new category") },
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryDropdownExpanded) },
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier
@@ -403,11 +410,29 @@ fun CreateTaskScreen(
                                 expanded = categoryDropdownExpanded,
                                 onDismissRequest = { categoryDropdownExpanded = false }
                             ) {
-                                categories.forEach { cat ->
+                                // Show filtered existing categories
+                                filteredCategories.forEach { cat ->
                                     DropdownMenuItem(
                                         text = { Text(cat) },
                                         onClick = {
-                                            selectedCategory = cat
+                                            categorySearchQuery = cat
+                                            categoryDropdownExpanded = false
+                                        }
+                                    )
+                                }
+
+                                // Show "Add New" option if query is not empty and not an exact match
+                                if (categorySearchQuery.isNotBlank() && !categories.any { it.equals(categorySearchQuery, ignoreCase = true) }) {
+                                    Divider()
+                                    DropdownMenuItem(
+                                        text = { 
+                                            Text(
+                                                "Add \"$categorySearchQuery\" as new category",
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.Bold
+                                            ) 
+                                        },
+                                        onClick = {
                                             categoryDropdownExpanded = false
                                         }
                                     )

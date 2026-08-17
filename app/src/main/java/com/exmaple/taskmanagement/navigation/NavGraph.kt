@@ -213,6 +213,9 @@ fun NavGraph(
                     },
                     onHistoryClick = {
                         try { navController.navigate(Routes.History) } catch (_: Exception) {}
+                    },
+                    onTaskClick = { taskId ->
+                        try { navController.navigate(Routes.buildTaskDetailRoute(taskId)) } catch (_: Exception) {}
                     }
                 )
             }
@@ -348,6 +351,7 @@ fun NavGraph(
             TaskDetailScreen(
                 taskId = taskId,
                 taskViewModel = taskViewModel,
+                authViewModel = authViewModel,
                 onBackClick = { try { navController.popBackStack() } catch (_: Exception) {} }
             )
         }

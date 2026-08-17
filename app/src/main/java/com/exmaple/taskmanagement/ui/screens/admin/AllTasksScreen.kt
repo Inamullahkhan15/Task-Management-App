@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
@@ -40,6 +41,8 @@ import com.exmaple.taskmanagement.ui.components.KineticTaskCard
 import com.exmaple.taskmanagement.viewmodel.AuthViewModel
 import com.exmaple.taskmanagement.viewmodel.TaskViewModel
 import kotlinx.coroutines.launch
+import java.util.Calendar
+import java.util.Date
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -51,18 +54,39 @@ fun AllTasksScreen(
     onBackClick: () -> Unit,
     onNotificationsClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
-    onHistoryClick: () -> Unit = {}
+    onHistoryClick: () -> Unit = {},
+    onTaskClick: (String) -> Unit = {}
 ) {
     val filteredTasks by taskViewModel.filteredAllTasks.collectAsStateWithLifecycle()
     val employees by taskViewModel.employees.collectAsStateWithLifecycle()
     val statusFilter by taskViewModel.statusFilter.collectAsStateWithLifecycle()
     val priorityFilter by taskViewModel.priorityFilter.collectAsStateWithLifecycle()
     val categoryFilter by taskViewModel.categoryFilter.collectAsStateWithLifecycle()
+    val dateFilter by taskViewModel.dateFilter.collectAsStateWithLifecycle()
     val userProfile by authViewModel.currentUserProfile.collectAsStateWithLifecycle()
 
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
     var showFilterSheet by remember { mutableStateOf(false) }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val filterDateFormatter = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
+
+    val datePickerDialog = remember {
+        val cal = Calendar.getInstance()
+        android.app.DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                val selectedCal = Calendar.getInstance().apply {
+                    set(year, month, dayOfMonth)
+                }
+                taskViewModel.setDateFilter(selectedCal.timeInMillis)
+            },
+            cal.get(Calendar.YEAR),
+            cal.get(Calendar.MONTH),
+            cal.get(Calendar.DAY_OF_MONTH)
+        )
+    }
 
     val categories = listOf("All", "Engineering", "Sales", "Inventory", "Marketing", "Support", "Operations")
 
@@ -196,13 +220,13 @@ fun AllTasksScreen(
 
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = if (priorityFilter != "All" || categoryFilter != "All") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                            color = if (priorityFilter != "All" || categoryFilter != "All" || dateFilter != null) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
                             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                             modifier = Modifier.size(52.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 IconButton(onClick = { showFilterSheet = true }) {
-                                    Icon(Icons.Default.FilterList, contentDescription = "Filter", tint = if (priorityFilter != "All" || categoryFilter != "All") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                                    Icon(Icons.Default.FilterList, contentDescription = "Filter", tint = if (priorityFilter != "All" || categoryFilter != "All" || dateFilter != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                                 }
                             }
                         }
@@ -256,7 +280,8 @@ fun AllTasksScreen(
                                     task = task,
                                     assignedUser = assignedEmp,
                                     isOverdue = isOverdue,
-                                    dateFormatter = dateFormatter
+                                    dateFormatter = dateFormatter,
+                                    onClick = { onTaskClick(task.id) }
                                 )
                             }
                         }
@@ -308,6 +333,31 @@ fun AllTasksScreen(
                             }
                         }
 
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text("Date Assigned", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { datePickerDialog.show() },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(if (dateFilter != null) filterDateFormatter.format(Date(dateFilter!!)) else "Select Date")
+                            }
+
+                            if (dateFilter != null) {
+                                IconButton(onClick = { taskViewModel.setDateFilter(null) }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear Date")
+                                }
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(24.dp))
 
                         Button(
@@ -324,6 +374,7 @@ fun AllTasksScreen(
                             onClick = { 
                                 taskViewModel.setPriorityFilter("All")
                                 taskViewModel.setCategoryFilter("All")
+                                taskViewModel.setDateFilter(null)
                                 scope.launch { sheetState.hide() }.invokeOnCompletion { showFilterSheet = false }
                             },
                             modifier = Modifier.fillMaxWidth()

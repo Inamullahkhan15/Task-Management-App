@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -20,11 +21,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.exmaple.taskmanagement.ui.components.UserAvatar
 import com.exmaple.taskmanagement.ui.theme.StatusCompletedBg
 import com.exmaple.taskmanagement.ui.theme.StatusCompletedText
 import com.exmaple.taskmanagement.ui.theme.StatusOverdueBg
 import com.exmaple.taskmanagement.ui.theme.StatusOverdueText
+import com.exmaple.taskmanagement.ui.theme.StatusPendingBg
+import com.exmaple.taskmanagement.ui.theme.StatusPendingText
+import com.exmaple.taskmanagement.ui.theme.StatusInProgressBg
+import com.exmaple.taskmanagement.ui.theme.StatusInProgressText
 import com.exmaple.taskmanagement.viewmodel.ActionState
+import com.exmaple.taskmanagement.viewmodel.AuthViewModel
 import com.exmaple.taskmanagement.viewmodel.TaskViewModel
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -34,11 +41,15 @@ import java.util.Locale
 fun TaskDetailScreen(
     taskId: String,
     taskViewModel: TaskViewModel,
+    authViewModel: AuthViewModel,
     onBackClick: () -> Unit
 ) {
     val selectedTask by taskViewModel.selectedTask.collectAsStateWithLifecycle()
     val updateStatusState by taskViewModel.updateStatusState.collectAsStateWithLifecycle()
     val assignedByName by taskViewModel.assignedByName.collectAsStateWithLifecycle()
+    val assignedEmployeesInfo by taskViewModel.assignedEmployeesInfo.collectAsStateWithLifecycle()
+
+    val currentUserId = remember { authViewModel.getCurrentUserId() ?: "" }
 
     val dateFormatter = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
 
@@ -98,7 +109,8 @@ fun TaskDetailScreen(
                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
                                         listOf("pending", "in_progress", "completed").forEach { statusOption ->
-                                            val isSelected = task.status.equals(statusOption, ignoreCase = true)
+                                            val currentStatus = task.employeeStatuses[currentUserId] ?: task.status
+                                            val isSelected = currentStatus.equals(statusOption, ignoreCase = true)
                                             val label = when (statusOption) {
                                                 "in_progress" -> "In Progress"
                                                 "completed" -> "Completed"
@@ -326,7 +338,7 @@ fun TaskDetailScreen(
 
                                 if (!task.category.isNullOrBlank()) {
                                     Spacer(modifier = Modifier.height(16.dp))
-                                    Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                     Spacer(modifier = Modifier.height(12.dp))
 
                                     Text(
@@ -334,6 +346,79 @@ fun TaskDetailScreen(
                                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                                         color = MaterialTheme.colorScheme.primary
                                     )
+                                }
+                            }
+                        }
+
+                        // NEW: Assigned Employees List Section
+                        if (assignedEmployeesInfo.isNotEmpty()) {
+                            Text(
+                                text = "Assigned to",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    val employeeList = assignedEmployeesInfo.toList()
+                                    employeeList.forEachIndexed { index, (uid, name) ->
+                                        val empStatus = task.employeeStatuses[uid] ?: "pending"
+                                        
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(vertical = 8.dp)
+                                        ) {
+                                            UserAvatar(name = name, size = 32.dp)
+                                            
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = name,
+                                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                
+                                                val (statusBg, statusText, statusLabel) = when (empStatus.lowercase()) {
+                                                    "completed" -> Triple(StatusCompletedBg, StatusCompletedText, "Completed")
+                                                    "in_progress" -> Triple(StatusInProgressBg, StatusInProgressText, "In Progress")
+                                                    else -> Triple(StatusPendingBg, StatusPendingText, "Pending")
+                                                }
+
+                                                Text(
+                                                    text = statusLabel,
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                    color = statusText
+                                                )
+                                            }
+
+                                            if (uid == currentUserId) {
+                                                Surface(
+                                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                                    shape = CircleShape
+                                                ) {
+                                                    Text(
+                                                        text = "YOU",
+                                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.ExtraBold),
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        if (index < employeeList.size - 1) {
+                                            HorizontalDivider(
+                                                modifier = Modifier.padding(start = 44.dp),
+                                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

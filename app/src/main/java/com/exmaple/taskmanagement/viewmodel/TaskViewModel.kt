@@ -31,6 +31,9 @@ class TaskViewModel(
     private val _adminTasks = MutableStateFlow<List<Task>>(emptyList())
     val adminTasks: StateFlow<List<Task>> = _adminTasks.asStateFlow()
 
+    private val _recentTasks = MutableStateFlow<List<Task>>(emptyList())
+    val recentTasks: StateFlow<List<Task>> = _recentTasks.asStateFlow()
+
     private val _historyTasks = MutableStateFlow<List<Task>>(emptyList())
     val historyTasks: StateFlow<List<Task>> = _historyTasks.asStateFlow()
 
@@ -38,6 +41,28 @@ class TaskViewModel(
 
     val employees: StateFlow<List<User>> = taskRepository.getEmployees()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val defaultCategories = listOf(
+        "Frontend Development",
+        "Backend Development",
+        "Mobile App Development",
+        "UI/UX Design",
+        "QA & Testing",
+        "API Integration",
+        "Database Management",
+        "Project Documentation",
+        "DevOps & Deployment"
+    )
+
+    private val _dbCategories = taskRepository.getCustomCategories()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allAvailableCategories: StateFlow<List<String>> = combine(
+        _dbCategories,
+        MutableStateFlow(defaultCategories)
+    ) { fromDb, defaults ->
+        (fromDb + defaults).distinct().sorted()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), defaultCategories)
 
     private val _statusFilter = MutableStateFlow("All")
     val statusFilter: StateFlow<String> = _statusFilter.asStateFlow()
@@ -48,17 +73,32 @@ class TaskViewModel(
     private val _categoryFilter = MutableStateFlow("All")
     val categoryFilter: StateFlow<String> = _categoryFilter.asStateFlow()
 
+    private val _dateFilter = MutableStateFlow<Long?>(null)
+    val dateFilter: StateFlow<Long?> = _dateFilter.asStateFlow()
+
     val filteredAllTasks: StateFlow<List<Task>> = combine(
         adminTasks,
         statusFilter,
         priorityFilter,
-        categoryFilter
-    ) { tasks, status, priority, category ->
+        categoryFilter,
+        dateFilter
+    ) { tasks, status, priority, category, date ->
         tasks.filter { task ->
             val matchesStatus = if (status == "All") true else task.status.equals(status, ignoreCase = true)
             val matchesPriority = if (priority == "All") true else task.priority.equals(priority, ignoreCase = true)
             val matchesCategory = if (category == "All") true else task.category.equals(category, ignoreCase = true)
-            matchesStatus && matchesPriority && matchesCategory
+            
+            val matchesDate = if (date == null) true else {
+                val taskDate = task.createdAt?.toDate()
+                if (taskDate != null) {
+                    val cal1 = java.util.Calendar.getInstance().apply { timeInMillis = date }
+                    val cal2 = java.util.Calendar.getInstance().apply { time = taskDate }
+                    cal1.get(java.util.Calendar.YEAR) == cal2.get(java.util.Calendar.YEAR) &&
+                    cal1.get(java.util.Calendar.DAY_OF_YEAR) == cal2.get(java.util.Calendar.DAY_OF_YEAR)
+                } else false
+            }
+
+            matchesStatus && matchesPriority && matchesCategory && matchesDate
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -73,6 +113,9 @@ class TaskViewModel(
 
     private val _assignedByName = MutableStateFlow("Admin")
     val assignedByName: StateFlow<String> = _assignedByName.asStateFlow()
+
+    private val _assignedEmployeesInfo = MutableStateFlow<Map<String, String>>(emptyMap())
+    val assignedEmployeesInfo: StateFlow<Map<String, String>> = _assignedEmployeesInfo.asStateFlow()
 
     fun getMyTasks(userId: String): StateFlow<List<Task>> {
         return taskRepository.getMyTasks(userId)
@@ -91,10 +134,22 @@ class TaskViewModel(
         _categoryFilter.value = category
     }
 
+    fun setDateFilter(dateMillis: Long?) {
+        _dateFilter.value = dateMillis
+    }
+
     fun loadAdminTasks(adminId: String) {
         viewModelScope.launch {
             taskRepository.getTasksByAdmin(adminId).collect { tasks ->
                 _adminTasks.value = tasks
+            }
+        }
+    }
+
+    fun loadRecentTasks(adminId: String) {
+        viewModelScope.launch {
+            taskRepository.getRecentTasksByAdmin(adminId, 10).collect { tasks ->
+                _recentTasks.value = tasks
             }
         }
     }
@@ -114,12 +169,26 @@ class TaskViewModel(
 
     fun loadTaskDetails(taskId: String) {
         _selectedTask.value = null // Reset before loading new
+        _assignedEmployeesInfo.value = emptyMap()
         viewModelScope.launch {
             taskRepository.getTaskById(taskId).collect { task ->
                 _selectedTask.value = task
+                
+                // Fetch Admin name
                 task?.assignedBy?.takeIf { it.isNotBlank() }?.let { adminUid ->
                     val adminUser = taskRepository.getUserById(adminUid)
                     _assignedByName.value = adminUser?.name ?: "Admin"
+                }
+
+                // Fetch all assigned employees names
+                task?.assignedTo?.let { uids ->
+                    val info = mutableMapOf<String, String>()
+                    uids.forEach { uid ->
+                        taskRepository.getUserById(uid)?.let { user ->
+                            info[uid] = user.name
+                        }
+                    }
+                    _assignedEmployeesInfo.value = info
                 }
             }
         }

@@ -61,6 +61,28 @@ class TaskRepository {
         awaitClose { registration.remove() }
     }
 
+    fun getRecentTasksByAdmin(adminId: String, limit: Long): Flow<List<Task>> = callbackFlow {
+        val registration = db.collection("tasks")
+            .whereEqualTo("assignedBy", adminId)
+            .orderBy("updatedAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(limit)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val tasks = snapshot?.documents?.mapNotNull { doc ->
+                    try {
+                        doc.toObject(Task::class.java)?.copy(id = doc.id)
+                    } catch (_: Exception) {
+                        null
+                    }
+                } ?: emptyList()
+                trySend(tasks)
+            }
+        awaitClose { registration.remove() }
+    }
+
     fun getCompletedTasksByAdmin(adminId: String): Flow<List<Task>> = callbackFlow {
         val registration = db.collection("tasks")
             .whereEqualTo("assignedBy", adminId)
@@ -195,6 +217,7 @@ class TaskRepository {
                 "priority" to priority,
                 "category" to category,
                 "status" to "pending",
+                "employeeStatuses" to assignedTo.associateWith { "pending" },
                 "createdAt" to FieldValue.serverTimestamp(),
                 "updatedAt" to FieldValue.serverTimestamp()
             )
@@ -212,26 +235,58 @@ class TaskRepository {
                 db.collection("notifications").add(notificationData).await()
             }
 
+            // Save category if it's new
+            if (!category.isNullOrBlank()) {
+                saveCategory(category)
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
+    private suspend fun saveCategory(categoryName: String) {
+        try {
+            val normalized = categoryName.trim()
+            val query = db.collection("categories")
+                .whereEqualTo("name", normalized)
+                .get().await()
+
+            if (query.isEmpty) {
+                db.collection("categories").add(mapOf("name" to normalized)).await()
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun getCustomCategories(): Flow<List<String>> = callbackFlow {
+        val registration = db.collection("categories")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val cats = snapshot?.documents?.mapNotNull { it.getString("name") } ?: emptyList()
+                trySend(cats.sorted())
+            }
+        awaitClose { registration.remove() }
+    }
+
     suspend fun updateTaskStatus(taskId: String, status: String): Result<Unit> {
         return try {
+            val currentUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
             val taskDoc = db.collection("tasks").document(taskId).get().await()
             val taskTitle = taskDoc.getString("title") ?: "Task"
             val adminId = taskDoc.getString("assignedBy") ?: ""
 
+            // Update individual status in the map
             db.collection("tasks").document(taskId).update(
                 mapOf(
-                    "status" to status,
+                    "employeeStatuses.$currentUid" to status,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
 
-            val currentUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
             if (adminId.isNotBlank() && adminId != currentUid) {
                 val userDoc = db.collection("users").document(currentUid).get().await()
                 val updaterName = userDoc.getString("name") ?: "An employee"

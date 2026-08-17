@@ -64,6 +64,7 @@ fun AdminDashboardScreen(
     onTaskClick: (String) -> Unit = {}
 ) {
     val allTasks by taskViewModel.allTasks.collectAsStateWithLifecycle()
+    val recentTasks by taskViewModel.recentTasks.collectAsStateWithLifecycle()
     val employees by taskViewModel.employees.collectAsStateWithLifecycle()
     val userProfile by authViewModel.currentUserProfile.collectAsStateWithLifecycle()
 
@@ -75,6 +76,7 @@ fun AdminDashboardScreen(
     LaunchedEffect(currentAdminId) {
         if (currentAdminId.isNotBlank()) {
             taskViewModel.loadAdminTasks(currentAdminId)
+            taskViewModel.loadRecentTasks(currentAdminId)
         }
     }
 
@@ -272,7 +274,7 @@ fun AdminDashboardScreen(
                             Icon(Icons.Default.Assignment, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "View my tasks",
+                                text = "View assigned tasks",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
                             )
                         }
@@ -289,12 +291,12 @@ fun AdminDashboardScreen(
                     }
 
                     // Live Activity Feed
-                    if (allTasks.isEmpty()) {
+                    if (recentTasks.isEmpty() && allTasks.isEmpty()) {
                         items(3) {
                             ShimmerTaskCard()
                         }
                     } else {
-                        items(allTasks.take(8), key = { it.id }) { task ->
+                        items(recentTasks, key = { it.id }) { task ->
                             val firstAssignedId = task.assignedTo.firstOrNull() ?: ""
                             val assignedEmp = employees.find { it.uid == firstAssignedId }
                             val empName = if (task.assignedTo.size > 1) {

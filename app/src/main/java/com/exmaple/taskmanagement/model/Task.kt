@@ -14,6 +14,7 @@ data class Task(
     val priority: String = "medium",
     val category: String? = null,
     val status: String = "pending",
+    val employeeStatuses: Map<String, String> = emptyMap(),
     val createdAt: Timestamp? = null,
     val updatedAt: Timestamp? = null
 )
