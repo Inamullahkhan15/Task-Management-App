@@ -27,8 +27,9 @@ jobs:
       - name: Build with Gradle
         run: ./gradlew assembleDebug
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: upload artifact to Firebase App Distribution
+        uses: w9jds/firebase-action@v2.2.2
         with:
-          name: task-management-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          args: appdistribution:distribute app/build/outputs/apk/debug/app-debug.apk --app ${{ secrets.FIREBASE_APP_ID }} --groups "internal-testers"
+        env:
+          GCP_SA_KEY: ${{ secrets.FIREBASE_APP_DISTRIBUTION_CREDENTIALS }}
