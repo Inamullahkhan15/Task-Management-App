@@ -248,6 +248,42 @@ class TaskViewModel(
         }
     }
 
+    fun updateTask(
+        taskId: String,
+        title: String,
+        description: String,
+        assignedTo: List<String>,
+        deadlineDateMillis: Long,
+        priority: String,
+        category: String?
+    ) {
+        val deadlineTimestamp = Timestamp(deadlineDateMillis / 1000, 0)
+        viewModelScope.launch {
+            _updateStatusState.value = ActionState.Loading
+            val result = taskRepository.updateTask(
+                taskId, title.trim(), description.trim(), assignedTo, deadlineTimestamp, priority.lowercase(), category?.trim()
+            )
+            result.fold(
+                onSuccess = { _updateStatusState.value = ActionState.Success },
+                onFailure = { _updateStatusState.value = ActionState.Error(it.localizedMessage ?: "Update failed") }
+            )
+        }
+    }
+
+    fun deleteTask(taskId: String, onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            _updateStatusState.value = ActionState.Loading
+            val result = taskRepository.deleteTask(taskId)
+            result.fold(
+                onSuccess = { 
+                    _updateStatusState.value = ActionState.Success
+                    onDeleted()
+                },
+                onFailure = { _updateStatusState.value = ActionState.Error(it.localizedMessage ?: "Delete failed") }
+            )
+        }
+    }
+
     fun resetCreateTaskState() {
         _createTaskState.value = ActionState.Idle
     }

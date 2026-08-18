@@ -246,6 +246,60 @@ class TaskRepository {
         }
     }
 
+    suspend fun updateTask(
+        taskId: String,
+        title: String,
+        description: String,
+        assignedTo: List<String>,
+        deadline: Timestamp,
+        priority: String,
+        category: String?
+    ): Result<Unit> {
+        return try {
+            val updateData = hashMapOf(
+                "title" to title,
+                "description" to description,
+                "assignedTo" to assignedTo,
+                "deadline" to deadline,
+                "priority" to priority,
+                "category" to category,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            db.collection("tasks").document(taskId).update(updateData as Map<String, Any>).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteTask(taskId: String): Result<Unit> {
+        return try {
+            // 1. Delete the task first (Admin definitely has permission for this)
+            db.collection("tasks").document(taskId).delete().await()
+            
+            // 2. Try to cleanup related notifications
+            // Wrap in inner try-catch so permission issues here don't break the whole flow
+            try {
+                val notifs = db.collection("notifications").whereEqualTo("taskId", taskId).get().await()
+                if (!notifs.isEmpty) {
+                    val batch = db.batch()
+                    for (doc in notifs.documents) {
+                        batch.delete(doc.reference)
+                    }
+                    batch.commit().await()
+                }
+            } catch (e: Exception) {
+                // Log and ignore: If we can't delete notifications, 
+                // the task is still gone, which is the main goal.
+                android.util.Log.w("TaskRepository", "Notification cleanup failed: ${e.message}")
+            }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     private suspend fun saveCategory(categoryName: String) {
         try {
             val normalized = categoryName.trim()

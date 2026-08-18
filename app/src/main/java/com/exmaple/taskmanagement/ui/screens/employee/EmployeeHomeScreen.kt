@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.exmaple.taskmanagement.ui.components.EmployeeStatBadge
 import com.exmaple.taskmanagement.ui.components.KineticEmployeeTaskCard
@@ -68,20 +69,21 @@ fun EmployeeHomeScreen(
                 title = {
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            UserAvatar(name = userProfile?.name ?: "Employee")
-                            Spacer(modifier = Modifier.width(10.dp))
+                            UserAvatar(name = userProfile?.name ?: "Employee", size = 32.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Task Management",
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.primary
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1
                             )
                         }
                         if (isAdminView) {
                             Text(
                                 text = "Viewing as Admin",
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 46.dp)
+                                modifier = Modifier.padding(start = 40.dp)
                             )
                         }
                     }
@@ -200,7 +202,7 @@ fun EmployeeHomeScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "My Tasks",
+                                text = if (isAdminView) "Assigned Tasks" else "My Tasks",
                                 style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
