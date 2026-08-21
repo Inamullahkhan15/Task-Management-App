@@ -36,7 +36,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private var notificationListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var joinRequestListener: com.google.firebase.firestore.ListenerRegistration? = null
     private val notifiedIds = mutableSetOf<String>()
+
+    private var authStateListener: FirebaseAuth.AuthStateListener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
@@ -57,22 +60,39 @@ class MainActivity : ComponentActivity() {
         askNotificationPermission()
         
         // Observe auth state to start/stop listener
-        FirebaseAuth.getInstance().addAuthStateListener { auth ->
+        authStateListener = FirebaseAuth.AuthStateListener { auth ->
             if (auth.currentUser != null) {
                 if (notificationListener == null) {
                     startNotificationListener()
                 }
+                // Check if user is admin to listen for join requests
+                checkAdminStatusAndListen()
             } else {
-                notificationListener?.remove()
-                notificationListener = null
+                removeFirestoreListeners()
             }
         }
+        
+        authStateListener?.let { FirebaseAuth.getInstance().addAuthStateListener(it) }
 
         setContent {
             TaskManagementTheme {
                 NavGraph()
             }
         }
+    }
+
+    private fun removeFirestoreListeners() {
+        notificationListener?.remove()
+        notificationListener = null
+        joinRequestListener?.remove()
+        joinRequestListener = null
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Clean up everything to prevent memory leaks
+        removeFirestoreListeners()
+        authStateListener?.let { FirebaseAuth.getInstance().removeAuthStateListener(it) }
     }
 
     private fun startNotificationListener() {
@@ -102,11 +122,49 @@ class MainActivity : ComponentActivity() {
                             val createdAt = dc.document.getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
                             val now = System.currentTimeMillis()
                             
-                            // Only notify if within the recency window.
+                            // More robust check: Only notify if the document is less than 1 minute old
+                            if (createdAt != null && (now - createdAt.toDate().time) < 60000) {
+                                notifiedIds.add(docId)
+                                showSystemNotification(title, message)
+                            }
+                        }
+                    }
+                }
+            }
+    }
+
+    private fun checkAdminStatusAndListen() {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        val db = FirebaseFirestore.getInstance()
+        
+        db.collection("users").document(uid).get().addOnSuccessListener { doc ->
+            val role = doc.getString("role") ?: ""
+            if (role.equals("admin", ignoreCase = true) && joinRequestListener == null) {
+                startJoinRequestListener()
+            }
+        }
+    }
+
+    private fun startJoinRequestListener() {
+        val db = FirebaseFirestore.getInstance()
+        
+        joinRequestListener = db.collection("join_requests")
+            .addSnapshotListener { snapshots, e ->
+                if (e != null) return@addSnapshotListener
+                
+                if (snapshots != null) {
+                    for (dc in snapshots.documentChanges) {
+                        if (dc.type == DocumentChange.Type.ADDED) {
+                            val docId = dc.document.id
+                            if (notifiedIds.contains(docId)) continue
+                            
+                            val name = dc.document.getString("name") ?: "Someone"
+                            val createdAt = dc.document.getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                            val now = System.currentTimeMillis()
+                            
                             if (createdAt != null && (now - createdAt.toDate().time) < 15000) {
                                 notifiedIds.add(docId)
-                                android.util.Log.d("NotificationListener", "Triggering alert for: $title ($docId)")
-                                showSystemNotification(title, message)
+                                showSystemNotification("New Join Request", "$name wants to join the team.")
                             }
                         }
                     }

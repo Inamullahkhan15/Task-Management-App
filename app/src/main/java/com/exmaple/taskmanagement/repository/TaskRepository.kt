@@ -1,5 +1,6 @@
 package com.exmaple.taskmanagement.repository
 
+import com.exmaple.taskmanagement.model.JoinRequest
 import com.exmaple.taskmanagement.model.Notification
 import com.exmaple.taskmanagement.model.Task
 import com.exmaple.taskmanagement.model.User
@@ -405,6 +406,158 @@ class TaskRepository {
                 batch.delete(doc.reference)
             }
             batch.commit().await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun inviteEmployee(name: String, email: String, adminId: String, password: String): Result<Unit> {
+        return try {
+            val normalizedEmail = email.trim().lowercase()
+            
+            // 1. Check if already invited
+            val existing = db.collection("invited_users")
+                .whereEqualTo("email", normalizedEmail)
+                .get().await()
+            
+            if (!existing.isEmpty) {
+                return Result.failure(Exception("This email is already invited."))
+            }
+
+            // 2. Add to invited_users
+            val inviteData = hashMapOf(
+                "name" to name.trim(),
+                "email" to normalizedEmail,
+                "password" to password.trim(), // Save the Admin-set password
+                "role" to "employee",
+                "invitedBy" to adminId,
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+            db.collection("invited_users").add(inviteData).await()
+            
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+// Employee Submit Request
+    suspend fun submitJoinRequest(name: String, email: String, password: String): Result<Unit>{
+        return try{
+            val requestData = hashMapOf(
+                "name" to name.trim(),
+                "email" to email.trim().lowercase(),
+                "password" to password.trim(),
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+            db.collection("join_requests").add(requestData).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun getPendingRequests(): Flow<List<JoinRequest>> = callbackFlow {
+        val registration = db.collection("join_requests")
+        .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .addSnapshotListener {snapshot, error ->
+                if (error != null){
+                    trySend(emptyList())
+                    return@addSnapshotListener
+
+                }
+                val requests = snapshot?.documents?.mapNotNull {doc ->
+                    doc.toObject(JoinRequest::class.java)?.copy(id = doc.id)
+                } ?: emptyList()
+                trySend(requests)
+            }
+        awaitClose { registration.remove()}
+    }
+
+    suspend fun approveJoinRequest(request: JoinRequest, adminId: String): Result<Unit> {
+        return try {
+            val inviteResult = inviteEmployee(request.name, request.email, adminId, request.password)
+            if (inviteResult.isSuccess) {
+            db.collection("join_requests").document(request.id).delete().await()
+            
+            // Notify the Admin (Self-feedback sound)
+            val notificationData = hashMapOf(
+                "userId" to adminId,
+                "taskId" to "",
+                "title" to "Member Approved",
+                "message" to "You successfully approved ${request.name}.",
+                "isRead" to false,
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+            db.collection("notifications").add(notificationData).await()
+            
+            Result.success(Unit)
+        } else {
+                Result.failure(inviteResult.exceptionOrNull() ?: Exception("Approval failed"))
+            }
+        } catch (e: Exception){
+            Result.failure(e)
+        }
+    }
+
+    suspend fun rejectJoinRequest(requestId: String): Result<Unit> {
+        return try {
+            val doc = db.collection("join_requests").document(requestId).get().await()
+            val name = doc.getString("name") ?: "User"
+            
+            db.collection("join_requests").document(requestId).delete().await()
+            
+            // Notify the Admin (Self-feedback sound)
+            val currentAdminId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+            if (currentAdminId.isNotBlank()) {
+                val notificationData = hashMapOf(
+                    "userId" to currentAdminId,
+                    "taskId" to "",
+                    "title" to "Request Rejected",
+                    "message" to "You rejected the request from $name.",
+                    "isRead" to false,
+                    "createdAt" to FieldValue.serverTimestamp()
+                )
+                db.collection("notifications").add(notificationData).await()
+            }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun getUnapprovedUsers(): Flow<List<User>> = callbackFlow {
+        val registration = db.collection("users")
+            .whereEqualTo("isApproved", false)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val users = snapshot?.documents?.mapNotNull { doc ->
+                    doc.toObject(User::class.java)?.copy(uid = doc.id)
+                } ?: emptyList()
+                trySend(users)
+            }
+        awaitClose { registration.remove() }
+    }
+
+    suspend fun approveUser(uid: String): Result<Unit> {
+        return try {
+            db.collection("users").document(uid).update("isApproved", true).await()
+            
+            // Notify the User that they are approved
+            val notificationData = hashMapOf(
+                "userId" to uid,
+                "taskId" to "",
+                "title" to "Account Approved",
+                "message" to "Your account has been approved by the Admin. You can now access all features.",
+                "isRead" to false,
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+            db.collection("notifications").add(notificationData).await()
+            
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

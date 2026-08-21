@@ -10,5 +10,6 @@ data class User(
     val role: String = "employee",
     val department: String? = null,
     val fcmToken: String? = null,
+    val isApproved: Boolean = false,
     val profilePictureUrl: String? = null
 )

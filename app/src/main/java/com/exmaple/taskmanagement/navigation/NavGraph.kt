@@ -130,24 +130,11 @@ fun NavGraph(
                         }
                     } catch (_: Exception) {}
                 },
-                onNavigateToSignUp = {
-                    try { navController.navigate(Routes.SignUp) } catch (_: Exception) {}
-                }
+                onNavigateToSignUp = { }
             )
         }
 
-        // Sign Up Screen
-        composable(Routes.SignUp) {
-            SignUpScreen(
-                authViewModel = authViewModel,
-                onSignUpSuccess = {
-                    try { navController.popBackStack() } catch (_: Exception) {}
-                },
-                onBackToLogin = {
-                    try { navController.popBackStack() } catch (_: Exception) {}
-                }
-            )
-        }
+        /* SignUp screen is now handled inside Login via Invitation */
 
         // Admin Dashboard — guarded, employee cannot reach this
         composable(Routes.AdminDashboard) {

@@ -106,7 +106,9 @@ fun NotificationsScreen(
                                 .fillMaxWidth()
                                 .clickable {
                                     taskViewModel.markNotificationRead(notification.id)
-                                    onNotificationClick(notification.taskId)
+                                    if (notification.taskId.isNotBlank()) {
+                                        onNotificationClick(notification.taskId)
+                                    }
                                 },
                             shape = RoundedCornerShape(14.dp),
                             colors = CardDefaults.cardColors(

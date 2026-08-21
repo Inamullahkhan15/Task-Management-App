@@ -2,6 +2,7 @@ package com.exmaple.taskmanagement.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.exmaple.taskmanagement.model.JoinRequest
 import com.exmaple.taskmanagement.model.Notification
 import com.exmaple.taskmanagement.model.Task
 import com.exmaple.taskmanagement.model.User
@@ -15,13 +16,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-
-sealed interface ActionState {
-    object Idle : ActionState
-    object Loading : ActionState
-    object Success : ActionState
-    data class Error(val message: String) : ActionState
-}
 
 class TaskViewModel(
     private val taskRepository: TaskRepository = TaskRepository(),
@@ -292,6 +286,29 @@ class TaskViewModel(
         _updateStatusState.value = ActionState.Idle
     }
 
+    private val _inviteState = MutableStateFlow<ActionState>(ActionState.Idle)
+    val inviteState: StateFlow<ActionState> = _inviteState.asStateFlow()
+
+    fun inviteEmployee(name: String, email: String, password: String) {
+        val adminId = authRepository.getCurrentUserId() ?: return
+        viewModelScope.launch {
+            _inviteState.value = ActionState.Loading
+            val result = taskRepository.inviteEmployee(name, email, adminId, password)
+            result.fold(
+                onSuccess = { 
+                    _inviteState.value = ActionState.Success 
+                },
+                onFailure = { 
+                    _inviteState.value = ActionState.Error(it.localizedMessage ?: "Database error: Invitation failed") 
+                }
+            )
+        }
+    }
+
+    fun resetInviteState() {
+        _inviteState.value = ActionState.Idle
+    }
+
     // Notifications
     fun getMyNotifications(userId: String): StateFlow<List<Notification>> {
         return taskRepository.getMyNotifications(userId)
@@ -307,6 +324,53 @@ class TaskViewModel(
     fun clearAllNotifications(userId: String) {
         viewModelScope.launch {
             taskRepository.clearAllNotifications(userId)
+        }
+    }
+    // Unapproved Users (New Registration flow)
+    val pendingApprovals: StateFlow<List<User>> =
+        taskRepository.getUnapprovedUsers()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Approval Logic for new registration
+    fun approveUser(uid: String) {
+        viewModelScope.launch {
+            _updateStatusState.value = ActionState.Loading
+            val result = taskRepository.approveUser(uid)
+            result.fold(
+                onSuccess = { _updateStatusState.value = ActionState.Success },
+                onFailure = { _updateStatusState.value = ActionState.Error(it.localizedMessage ?: "Approval failed") }
+            )
+        }
+    }
+
+    // Pending Requests (Old invitation flow - kept for compatibility)
+    val pendingRequests: StateFlow<List<com.exmaple.taskmanagement.model.JoinRequest>> =
+        taskRepository.getPendingRequests()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Approval Logic
+
+    fun approveRequest(request: com.exmaple.taskmanagement.model.JoinRequest) {
+        val adminId = authRepository.getCurrentUserId() ?: return
+        viewModelScope.launch {
+            _inviteState.value = ActionState.Loading
+            val result = taskRepository.approveJoinRequest(request, adminId)
+            result.fold(
+                onSuccess = { _inviteState.value = ActionState.Success},
+                onFailure = { _inviteState.value = ActionState.Error(it.localizedMessage ?: "Approval failed")}
+            )
+        }
+    }
+
+    // Reject function logic
+    fun rejectRequest(requestId: String) {
+        viewModelScope.launch {
+            _inviteState.value = ActionState.Loading
+            val result = taskRepository.rejectJoinRequest(requestId)
+            result.fold(
+                onSuccess = { _inviteState.value = ActionState.Success},
+                onFailure = { _inviteState.value = ActionState.Error(it.localizedMessage ?: "Rejection failed")}
+            )
         }
     }
 }

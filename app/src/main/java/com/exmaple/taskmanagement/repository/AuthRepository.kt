@@ -24,9 +24,24 @@ class AuthRepository {
             val profile = hashMapOf(
                 "name" to name,
                 "email" to email,
-                "role" to "employee"
+                "role" to "employee",
+                "isApproved" to false
             )
             db.collection("users").document(user.uid).set(profile).await()
+
+            // Notify Admins about new registration
+            val admins = db.collection("users").whereEqualTo("role", "admin").get().await()
+            for (adminDoc in admins.documents) {
+                val notificationData = hashMapOf(
+                    "userId" to adminDoc.id,
+                    "taskId" to "",
+                    "title" to "New Join Request",
+                    "message" to "$name has registered and is waiting for approval.",
+                    "isRead" to false,
+                    "createdAt" to com.google.firebase.Timestamp.now()
+                )
+                db.collection("notifications").add(notificationData)
+            }
 
             user.sendEmailVerification().await()
             auth.signOut()
@@ -47,12 +62,23 @@ class AuthRepository {
                 return Result.failure(EmailNotVerifiedException())
             }
 
-            // Fetch and update FCM Token
-            try {
-                val token = FirebaseMessaging.getInstance().token.await()
-                updateFcmToken(user.uid, token)
-            } catch (e: Exception) {
-                // Non-critical failure, don't block login
+            // Check if account is approved by Admin
+            val userDoc = db.collection("users").document(user.uid).get().await()
+            val isApproved = userDoc.getBoolean("isApproved") ?: false
+            val role = userDoc.getString("role") ?: "employee"
+
+            if (!isApproved && role != "admin") {
+                auth.signOut()
+                return Result.failure(Exception("Your account is pending Admin approval. Please try again later."))
+            }
+
+            // Fetch and update FCM Token (ASYNCHRONOUSLY)
+            FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    val token = task.result
+                    // Run update in a global way since login is about to return
+                    db.collection("users").document(user.uid).update("fcmToken", token)
+                }
             }
 
             Result.success(user.uid)
@@ -99,5 +125,14 @@ class AuthRepository {
 
     fun logout() {
         try { auth.signOut() } catch (_: Exception) {}
+    }
+
+    suspend fun sendPasswordResetEmail(email: String): Result<Unit> {
+        return try {
+            auth.sendPasswordResetEmail(email.trim()).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }

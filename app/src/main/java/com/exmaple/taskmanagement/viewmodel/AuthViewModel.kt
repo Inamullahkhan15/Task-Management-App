@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 sealed interface LoginUiState {
     object Idle : LoginUiState
@@ -28,6 +29,9 @@ class AuthViewModel(
     private val authRepository: AuthRepository = AuthRepository()
 ) : ViewModel() {
 
+    private val _requestState = MutableStateFlow<ActionState>(ActionState.Idle)
+    val requestState: StateFlow<ActionState> = _requestState.asStateFlow()
+
     private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
@@ -41,6 +45,34 @@ class AuthViewModel(
 
     private val _currentUserProfile = MutableStateFlow<com.exmaple.taskmanagement.model.User?>(null)
     val currentUserProfile: StateFlow<com.exmaple.taskmanagement.model.User?> = _currentUserProfile.asStateFlow()
+
+    fun handleJoinOrRegister(name: String, email: String, password: String) {
+        if (name.isBlank() || email.isBlank() || password.isBlank()) {
+            _uiState.value = LoginUiState.Error("Please fill in all fields")
+            return
+        }
+        if (password.length < 6) {
+            _uiState.value = LoginUiState.Error("Password must be at least 6 characters")
+            return
+        }
+
+        viewModelScope.launch {
+            _requestState.value = ActionState.Loading
+            
+            // Join Request effectively creates a pending account
+            val result = authRepository.signUp(name.trim(), email.trim(), password)
+            result.fold(
+                onSuccess = { 
+                    _requestState.value = ActionState.Success 
+                },
+                onFailure = { e -> 
+                    _requestState.value = ActionState.Error(e.localizedMessage ?: "Request failed")
+                }
+            )
+        }
+    }
+
+    // Deleted custom await to use the official extension from kotlinx-coroutines-play-services
 
     fun signUp(name: String, email: String, password: String, confirmPassword: String) {
         if (name.isBlank() || email.isBlank() || password.isBlank()) {
@@ -141,4 +173,30 @@ class AuthViewModel(
     }
 
     fun getCurrentUserId(): String? = authRepository.getCurrentUserId()
+
+    fun resetRequestState() {
+        _requestState.value = ActionState.Idle
+    }
+
+    private val _resetPasswordState = MutableStateFlow<ActionState>(ActionState.Idle)
+    val resetPasswordState: StateFlow<ActionState> = _resetPasswordState.asStateFlow()
+
+    fun resetPassword(email: String) {
+        if (email.isBlank()) {
+            _resetPasswordState.value = ActionState.Error("Please enter your email address")
+            return
+        }
+        viewModelScope.launch {
+            _resetPasswordState.value = ActionState.Loading
+            val result = authRepository.sendPasswordResetEmail(email)
+            result.fold(
+                onSuccess = { _resetPasswordState.value = ActionState.Success },
+                onFailure = { e -> _resetPasswordState.value = ActionState.Error(e.localizedMessage ?: "Failed to send reset email") }
+            )
+        }
+    }
+
+    fun resetPasswordState() {
+        _resetPasswordState.value = ActionState.Idle
+    }
 }

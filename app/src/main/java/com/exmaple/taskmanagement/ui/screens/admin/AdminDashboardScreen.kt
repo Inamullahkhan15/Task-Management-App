@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.History
@@ -19,16 +20,15 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Pending
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,6 +45,7 @@ import com.exmaple.taskmanagement.ui.theme.StatusOverdueBg
 import com.exmaple.taskmanagement.ui.theme.StatusOverdueText
 import com.exmaple.taskmanagement.ui.theme.StatusPendingBg
 import com.exmaple.taskmanagement.ui.theme.StatusPendingText
+import com.exmaple.taskmanagement.viewmodel.ActionState
 import com.exmaple.taskmanagement.viewmodel.AuthViewModel
 import com.exmaple.taskmanagement.viewmodel.TaskViewModel
 import java.util.Locale
@@ -63,12 +64,22 @@ fun AdminDashboardScreen(
     onHistoryClick: () -> Unit = {},
     onTaskClick: (String) -> Unit = {}
 ) {
+    val pendingApprovals by taskViewModel.pendingApprovals.collectAsStateWithLifecycle()
+    val pendingRequests by taskViewModel.pendingRequests.collectAsStateWithLifecycle()
+
     val allTasks by taskViewModel.allTasks.collectAsStateWithLifecycle()
     val recentTasks by taskViewModel.recentTasks.collectAsStateWithLifecycle()
     val employees by taskViewModel.employees.collectAsStateWithLifecycle()
     val userProfile by authViewModel.currentUserProfile.collectAsStateWithLifecycle()
 
     val currentAdminId = authViewModel.getCurrentUserId() ?: ""
+    val inviteState by taskViewModel.inviteState.collectAsStateWithLifecycle()
+    
+    var showInviteDialog by remember { mutableStateOf(false) }
+    var inviteName by remember { mutableStateOf("") }
+    var inviteEmail by remember { mutableStateOf("") }
+    var invitePassword by remember { mutableStateOf("") }
+
     val notificationsFlow = remember(currentAdminId) { taskViewModel.getMyNotifications(currentAdminId) }
     val notifications by notificationsFlow.collectAsStateWithLifecycle(emptyList())
     val unreadCount = notifications.count { !it.isRead }
@@ -77,6 +88,25 @@ fun AdminDashboardScreen(
         if (currentAdminId.isNotBlank()) {
             taskViewModel.loadAdminTasks(currentAdminId)
             taskViewModel.loadRecentTasks(currentAdminId)
+        }
+    }
+
+    val context = LocalContext.current
+    LaunchedEffect(inviteState) {
+        when (inviteState) {
+            is ActionState.Success -> {
+                android.widget.Toast.makeText(context, "Action successful!", android.widget.Toast.LENGTH_SHORT).show()
+                taskViewModel.resetInviteState()
+                showInviteDialog = false
+                inviteName = ""
+                inviteEmail = ""
+                invitePassword = ""
+            }
+            is ActionState.Error -> {
+                android.widget.Toast.makeText(context, (inviteState as ActionState.Error).message, android.widget.Toast.LENGTH_LONG).show()
+                taskViewModel.resetInviteState()
+            }
+            else -> {}
         }
     }
 
@@ -161,7 +191,6 @@ fun AdminDashboardScreen(
                 .padding(innerPadding),
             contentAlignment = Alignment.TopCenter
         ) {
-            // Adaptive Container for wide devices / tablets
             Box(
                 modifier = Modifier
                     .widthIn(max = 840.dp)
@@ -174,7 +203,6 @@ fun AdminDashboardScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)
                 ) {
-                    // Welcome Header
                     item {
                         Column {
                             Text(
@@ -191,7 +219,6 @@ fun AdminDashboardScreen(
                         }
                     }
 
-                    // Stat Cards Grid 2x2
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Row(
@@ -242,27 +269,45 @@ fun AdminDashboardScreen(
                         }
                     }
 
-                    // Assign New Task Primary Button
                     item {
-                        Button(
-                            onClick = onCreateTaskClick,
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Assign new task",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                            )
+                            Button(
+                                onClick = onCreateTaskClick,
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(52.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Task",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                )
+                            }
+
+                            Button(
+                                onClick = { showInviteDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(52.dp)
+                            ) {
+                                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Invite",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                )
+                            }
                         }
                     }
 
-                    // Secondary button — lets Admin view their own personal task list
-                    // (same screen an Employee sees)
                     item {
                         OutlinedButton(
                             onClick = onViewMyTasksClick,
@@ -280,7 +325,48 @@ fun AdminDashboardScreen(
                         }
                     }
 
-                    // Recent Activity Title
+                    if (pendingApprovals.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Pending Approvals",
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(top = 16.dp)
+                            )
+                        }
+
+                        // Correct Approval Style (Users Collection)
+                        items(pendingApprovals, key = { it.uid }) { user ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    UserAvatar(name = user.name, size = 40.dp)
+                                    Spacer(modifier = Modifier.width(14.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(user.name, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold))
+                                        Text(user.email, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Row {
+                                        IconButton(onClick = { taskViewModel.approveUser(user.uid) }, enabled = inviteState !is ActionState.Loading) {
+                                            if (inviteState is ActionState.Loading) {
+                                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                            } else {
+                                                Icon(Icons.Default.CheckCircle, contentDescription = "Approve", tint = Color(0xFF2E7D32))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     item {
                         Text(
                             text = "Recent Activity",
@@ -290,7 +376,6 @@ fun AdminDashboardScreen(
                         )
                     }
 
-                    // Live Activity Feed
                     if (recentTasks.isEmpty() && allTasks.isEmpty()) {
                         items(3) {
                             ShimmerTaskCard()
@@ -319,7 +404,141 @@ fun AdminDashboardScreen(
                 }
             }
         }
+
+        if (showInviteDialog) {
+            InviteMemberDialog(
+                inviteState = inviteState,
+                inviteName = inviteName,
+                onNameChange = { inviteName = it },
+                inviteEmail = inviteEmail,
+                onEmailChange = { inviteEmail = it },
+                invitePassword = invitePassword,
+                onPasswordChange = { invitePassword = it },
+                onDismiss = { if (inviteState !is ActionState.Loading) showInviteDialog = false },
+                onInviteClick = { taskViewModel.inviteEmployee(inviteName, inviteEmail, invitePassword) }
+            )
+        }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun InviteMemberDialog(
+    inviteState: ActionState,
+    inviteName: String,
+    onNameChange: (String) -> Unit,
+    inviteEmail: String,
+    onEmailChange: (String) -> Unit,
+    invitePassword: String,
+    onPasswordChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onInviteClick: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { 
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.size(40.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                    }
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Invite Team Member", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    "Enter the details below to authorize a new employee. They will be able to join your team using this email.", 
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                
+                OutlinedTextField(
+                    value = inviteName,
+                    onValueChange = onNameChange,
+                    label = { Text("Full Name") },
+                    placeholder = { Text("e.g. John Doe") },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    )
+                )
+                
+                OutlinedTextField(
+                    value = inviteEmail,
+                    onValueChange = onEmailChange,
+                    label = { Text("Email Address") },
+                    placeholder = { Text("name@company.com") },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    )
+                )
+
+                OutlinedTextField(
+                    value = invitePassword,
+                    onValueChange = onPasswordChange,
+                    label = { Text("Initial Password") },
+                    placeholder = { Text("Set a password for them") },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    )
+                )
+
+                if (inviteState is ActionState.Error) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = (inviteState as ActionState.Error).message,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onInviteClick,
+                enabled = inviteName.isNotBlank() && inviteEmail.contains("@") && invitePassword.length >= 6 && inviteState !is ActionState.Loading,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(0.6f)
+            ) {
+                if (inviteState is ActionState.Loading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                } else {
+                    Text("Send Invite", fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = inviteState !is ActionState.Loading) {
+                Text("Cancel", color = MaterialTheme.colorScheme.outline)
+            }
+        }
+    )
 }
 
 @Composable
